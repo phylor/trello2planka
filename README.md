@@ -8,7 +8,7 @@ Trello2planka is a Ruby gem to copy Trello boards to [Planka](https://planka.app
 
 ## Usage
 
-TODO: Write usage instructions here
+    $ trello2planka import <trello_board_id>
 
 ## Development
 

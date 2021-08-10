@@ -2,4 +2,16 @@
 
 require 'trello2planka'
 
-puts Trello2planka::VERSION
+if ARGV.length >= 1
+  case ARGV[0]
+    when 'import'
+      trello_board_id = ARGV[1]
+
+      trello = Trello2planka::TrelloAPI.new
+      trello.authenticate
+      board_name = trello.get_board_name(trello_board_id)
+      puts board_name
+  end
+else
+  puts "trello2planka #{Trello2planka::VERSION}"
+end
