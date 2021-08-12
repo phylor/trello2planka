@@ -1,16 +1,95 @@
 #!/usr/bin/env ruby
 
 require 'trello2planka'
+require 'date'
 
 if ARGV.length >= 1
   case ARGV[0]
     when 'import'
       trello_board_id = ARGV[1]
+      planka_board_id = ARGV[2]
 
-      trello = Trello2planka::TrelloAPI.new
+      trello = Trello2planka::TrelloApi.new
       trello.authenticate
       board_name = trello.get_board_name(trello_board_id)
-      puts board_name
+      puts "Importing #{board_name}.."
+
+      planka = Trello2planka::PlankaApi.new
+      planka.authenticate
+
+      lists = trello.get_lists(trello_board_id)
+
+      labels = {}
+      lists.each do |list|
+        list_id = planka.create_list(planka_board_id, list.name, list.pos)
+
+        list.cards.each do |card|
+          # card.cover_image_id
+          created_at = Time.at(card.id[0..7].to_i(16)).to_datetime
+
+          card_id = planka.create_card(planka_board_id, list_id, card.name, card.pos, card.desc, card.due&.iso8601, created_at)
+
+          card.labels.each do |label|
+            trello_label_id = label.id
+
+            planka_label = Trello2planka::Converters::Label.new(label)
+
+            if !labels[trello_label_id]
+              color = planka_label.color
+              name = planka_label.name
+
+              planka_label_id = planka.create_label(planka_board_id, name, color)
+
+              labels[trello_label_id] = planka_label_id
+            end
+
+            planka_label_id = labels[trello_label_id]
+
+            planka.add_label(card_id, planka_label_id)
+          end
+
+          card.checklists.each do |checklist|
+            checklist.check_items.sort_by { |item| item[:pos] }.each do |item|
+              planka.create_task(card_id, item[:name], item[:state] != 'incomplete')
+            end
+          end
+
+          links = []
+          card.attachments.sort_by { |attachment| attachment.position }.each do |attachment|
+            if attachment.is_upload
+              attachment_stream = trello.download_attachment(attachment.url)
+              planka.create_attachment(card_id, attachment.file_name, attachment.url, attachment_stream)
+            else
+              links << attachment.url
+            end
+          end
+
+          if !links.empty?
+            links_as_list = links.map { |link| "- #{link}" }.join("\n")
+            links_as_markdown = <<~END
+            ---
+            **Links:**
+            #{links_as_list}
+            END
+
+            planka_card = planka.get_card(card_id)
+            description = planka_card['description']
+
+            if description && description != ''
+              description += "\n\n#{links_as_markdown}"
+            else
+              description = links_as_markdown
+            end
+
+            planka.update_card(card_id, description: description)
+          end
+
+          card.comments.reverse.each do |comment|
+            text = comment.data[:text]
+            planka.create_comment(card_id, text, comment.date)
+          end
+        end
+      end
   end
 else
   puts "trello2planka #{Trello2planka::VERSION}"
